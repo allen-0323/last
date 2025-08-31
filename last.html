@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ESP8266 GPS Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/paho-mqtt/paho-mqtt-min.js"></script>
+  <style>#map{height:100vh;width:100%;}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    // ---- 初始化地圖 ----
+    var map = L.map('map').setView([0, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+    var marker = L.marker([0,0]).addTo(map).bindPopup('GPS 位置');
+
+    // ---- 初始化 MQTT WebSocket 客戶端 ----
+    var client = new Paho.MQTT.Client("broker.emqx.io", 8083, "webclient_" + Math.random());
+    
+    client.onMessageArrived = function(message) {
+        try {
+            var data = JSON.parse(message.payloadString);
+            var lat = parseFloat(data.lat);
+            var lng = parseFloat(data.lng);
+            marker.setLatLng([lat, lng]);
+            map.setView([lat, lng], 16);
+        } catch(e) {
+            console.error("解析 JSON 失敗:", e);
+        }
+    };
+
+    client.connect({
+        onSuccess: function() {
+            console.log("MQTT 連線成功!");
+            client.subscribe("gps/device1");
+        }
+    });
+  </script>
+</body>
+</html>

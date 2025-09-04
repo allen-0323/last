@@ -14,7 +14,7 @@
     // ---- 初始化地圖 ----
     var map = L.map('map').setView([23.5, 121], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-    var marker = L.marker([0,0]).addTo(map).bindPopup('GPS 位置');
+    var marker = L.marker([23.5,121]).addTo(map).bindPopup("訊號源");
 
     // ---- 初始化 MQTT WebSocket 客戶端 ----
     var client = new Paho.MQTT.Client("broker.emqx.io", 8083, "webclient_" + Math.random());
@@ -40,4 +40,5 @@
   </script>
 </body>
 </html>
+
 

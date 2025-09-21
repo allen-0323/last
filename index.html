@@ -99,8 +99,6 @@
       if(firstUpdate){
         map.setView(lastPos,18);
         firstUpdate=false;
-      }else{
-        map.panTo(lastPos,{animate:true});
       }
 
       $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
@@ -126,5 +124,6 @@
   </script>
 </body>
 </html>
+
 
 

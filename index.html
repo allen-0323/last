@@ -102,17 +102,20 @@
       }
 
       $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
-   
-      let displaySpd = (typeof spd === 'number' && spd < 1) ? "0.00" : spd.toFixed(2);
-      $speed.textContent = displaySpd;
-  
-
-
-
-      
+      let displaySpd = (typeof spd==='number' && spd < 1) ? "0.00" : spd.toFixed(2);
+      $speed.textContent  = displaySpd;
       $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
-      $ts.textContent     = ts || '—';
-    }catch(err){
+
+      // ===== 自動轉當地時間 =====
+      function utcToLocalDynamic(utcStr) {
+      if (!utcStr) return '—';
+      const [h, m, s] = utcStr.split(':').map(Number);
+      let date = new Date();
+      date.setUTCHours(h, m, s);
+      return date.toLocaleTimeString(); // 自動依瀏覽器時區
+}
+
+$ts.textContent = utcToLocalDynamic(ts);catch(err){
       console.warn('JSON解析錯誤:',err);
     }
   });
@@ -124,6 +127,7 @@
   </script>
 </body>
 </html>
+
 
 
 

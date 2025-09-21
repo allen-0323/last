@@ -105,7 +105,7 @@
       let displaySpd = (typeof spd==='number' && spd < 1) ? "0.00" : spd.toFixed(2);
       $speed.textContent  = displaySpd;
       $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
-
+      
       // ===== 自動轉當地時間 =====
       function utcToLocalDynamic(utcStr) {
       if (!utcStr) return '—';
@@ -113,9 +113,11 @@
       let date = new Date();
       date.setUTCHours(h, m, s);
       return date.toLocaleTimeString(); // 自動依瀏覽器時區
-}
+      }
 
-$ts.textContent = utcToLocalDynamic(ts);catch(err){
+
+
+      $ts.textContent = utcToLocalDynamic(ts);
       console.warn('JSON解析錯誤:',err);
     }
   });
@@ -127,6 +129,7 @@ $ts.textContent = utcToLocalDynamic(ts);catch(err){
   </script>
 </body>
 </html>
+
 
 
 

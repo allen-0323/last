@@ -113,4 +113,9 @@
   });
 
   $locateBtn.addEventListener('click',()=>{
-    if(lastPos) map.setView(lastPos,18,{animate:true}
+    if(lastPos) map.setView(lastPos,18,{animate:true});
+    else alert("尚未收到 GPS 訊號");
+  });
+  </script>
+</body>
+</html>

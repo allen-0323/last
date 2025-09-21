@@ -8,7 +8,8 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
     .info {
       position: absolute; top: 10px; left: 10px;
       background: rgba(255,255,255,.9); padding: 10px 12px; border-radius: 6px;
@@ -35,102 +36,106 @@
     <div class="info-row">Lat/Lng：<span id="latlng">—</span></div>
     <div class="info-row">速度：<span id="speed">—</span> km/h</div>
     <div class="info-row">高度：<span id="alt">—</span> m</div>
-    <div class="info-row">時間(UTC)：<span id="ts">—</span></div>
+    <div class="info-row">時間(當地)：<span id="ts">—</span></div>
   </div>
 
   <div class="locate-btn" id="locateBtn">📍 回到定位</div>
 
   <script>
-  const map = L.map('map', { zoomControl:false }).setView([23.5,121],7);
-  L.control.zoom({position:'bottomright'}).addTo(map);
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const map = L.map('map', { zoomControl:false }).setView([23.5,121],7);
+    L.control.zoom({position:'bottomright'}).addTo(map);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map);
-  const marker = L.marker([23.5,121]).addTo(map).bindPopup("GPS訊號源");
-  const path = L.polyline([], { color: '#ef4444', weight: 3 }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map);
 
-  const $latlng = document.getElementById('latlng');
-  const $speed  = document.getElementById('speed');
-  const $alt    = document.getElementById('alt');
-  const $ts     = document.getElementById('ts');
-  const $dot    = document.getElementById('connDot');
-  const $connTx = document.getElementById('connText');
-  const $locateBtn = document.getElementById('locateBtn');
+    const marker = L.marker([23.5,121]).addTo(map).bindPopup("GPS訊號源");
+    const path = L.polyline([], { color: '#ef4444', weight: 3 }).addTo(map);
 
-  let firstUpdate = true;
-  let lastPos = null;
-  const smoothBuffer = [];
-  const bufferSize = 5;
+    const $latlng = document.getElementById('latlng');
+    const $speed  = document.getElementById('speed');
+    const $alt    = document.getElementById('alt');
+    const $ts     = document.getElementById('ts');
+    const $dot    = document.getElementById('connDot');
+    const $connTx = document.getElementById('connText');
+    const $locateBtn = document.getElementById('locateBtn');
 
-  function smoothLatLng(lat,lng){
-    smoothBuffer.push([lat,lng]);
-    if(smoothBuffer.length>bufferSize) smoothBuffer.shift();
-    let avgLat=0, avgLng=0;
-    smoothBuffer.forEach(p=>{avgLat+=p[0]; avgLng+=p[1];});
-    return [avgLat/smoothBuffer.length, avgLng/smoothBuffer.length];
-  }
+    let firstUpdate = true;
+    let lastPos = null;
+    const smoothBuffer = [];
+    const bufferSize = 5;
 
-  const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-    connectTimeout:4000, clientId:'web_'+Math.random().toString(16).slice(2), clean:true, keepalive:30
-  });
+    function smoothLatLng(lat,lng){
+      smoothBuffer.push([lat,lng]);
+      if(smoothBuffer.length>bufferSize) smoothBuffer.shift();
+      let avgLat=0, avgLng=0;
+      smoothBuffer.forEach(p=>{avgLat+=p[0]; avgLng+=p[1];});
+      return [avgLat/smoothBuffer.length, avgLng/smoothBuffer.length];
+    }
 
-  client.on('connect',()=>{
-    $dot.className='dot ok'; $connTx.textContent='已連線';
-    client.subscribe('gps/device1',{qos:0});
-  });
-  client.on('reconnect',()=>{$dot.className='dot bad'; $connTx.textContent='重連中…';});
-  client.on('close',()=>{$dot.className='dot bad'; $connTx.textContent='連線關閉';});
-  client.on('error',(e)=>{console.error(e);});
-
-  client.on('message',(topic,payload)=>{
-    console.log("收到 MQTT:", payload.toString()); // Debug
-    try{
-      const { lat, lng, spd, alt, ts } = JSON.parse(payload.toString());
-      if(typeof lat!=='number'||typeof lng!=='number') return;
-
-      const [sLat,sLng] = smoothLatLng(lat,lng);
-      lastPos = [sLat,sLng];
-      marker.setLatLng(lastPos);
-
-      const pts = path.getLatLngs();
-      if(pts.length===0 || L.latLng(sLat,sLng).distanceTo(pts[pts.length-1])>20){
-        path.addLatLng(lastPos);
-      }
-
-      if(firstUpdate){
-        map.setView(lastPos,18);
-        firstUpdate=false;
-      }
-
-      $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
-      let displaySpd = (typeof spd==='number' && spd < 1) ? "0.00" : spd.toFixed(2);
-      $speed.textContent  = displaySpd;
-      $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
-      
-      // ===== 自動轉當地時間 =====
-      function utcToLocalDynamic(utcStr) {
+    // 自動轉當地時間
+    function utcToLocalDynamic(utcStr) {
       if (!utcStr) return '—';
       const [h, m, s] = utcStr.split(':').map(Number);
       let date = new Date();
       date.setUTCHours(h, m, s);
-      return date.toLocaleTimeString(); // 自動依瀏覽器時區
-      }
-
-
-
-      $ts.textContent = utcToLocalDynamic(ts);
-      console.warn('JSON解析錯誤:',err);
+      return date.toLocaleTimeString();
     }
-  });
 
-  $locateBtn.addEventListener('click',()=>{
-    if(lastPos) map.setView(lastPos,18,{animate:true});
-    else alert("尚未收到 GPS 訊號");
+    // MQTT
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      connectTimeout:4000, clientId:'web_'+Math.random().toString(16).slice(2), clean:true, keepalive:30
+    });
+
+    client.on('connect',()=>{
+      $dot.className='dot ok'; $connTx.textContent='已連線';
+      client.subscribe('gps/device1',{qos:0});
+    });
+    client.on('reconnect',()=>{$dot.className='dot bad'; $connTx.textContent='重連中…';});
+    client.on('close',()=>{$dot.className='dot bad'; $connTx.textContent='連線關閉';});
+    client.on('error',(e)=>{console.error(e);});
+
+    client.on('message',(topic,payload)=>{
+      console.log("收到 MQTT:", payload.toString());
+      try{
+        const { lat, lng, spd, alt, ts } = JSON.parse(payload.toString());
+        if(typeof lat!=='number'||typeof lng!=='number') return;
+
+        const [sLat,sLng] = smoothLatLng(lat,lng);
+        lastPos = [sLat,sLng];
+        marker.setLatLng(lastPos);
+
+        const pts = path.getLatLngs();
+        if(pts.length===0 || L.latLng(sLat,sLng).distanceTo(pts[pts.length-1])>20){
+          path.addLatLng(lastPos);
+        }
+
+        // 第一次更新鎖定地圖，之後不再自動移動
+        if(firstUpdate){
+          map.setView(lastPos,18);
+          firstUpdate=false;
+        }
+
+        $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
+
+        // 速度閾值過濾
+        let displaySpd = (typeof spd==='number' && spd < 1) ? "0.00" : spd.toFixed(2);
+        $speed.textContent  = displaySpd;
+
+        $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
+
+        // 當地時間顯示
+        $ts.textContent = utcToLocalDynamic(ts);
+
+      }catch(err){
+        console.warn('JSON解析錯誤:',err);
+      }
+    });
+
+    $locateBtn.addEventListener('click',()=>{
+      if(lastPos) map.setView(lastPos,18,{animate:true});
+      else alert("尚未收到 GPS 訊號");
+    });
   });
   </script>
 </body>
 </html>
-
-
-
-
-

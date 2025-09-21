@@ -104,7 +104,9 @@
       }
 
       $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
-      $speed.textContent  = (typeof spd==='number')?spd.toFixed(2):'—';
+      let displaySpd = (typeof spd==='number' && spd < 1) ? 0 : spd.toFixed(2);
+      $speed.textContent  = displaySpd;
+
       $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
       $ts.textContent     = ts || '—';
     }catch(err){
@@ -119,3 +121,4 @@
   </script>
 </body>
 </html>
+

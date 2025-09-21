@@ -1,45 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>ESP8266 GPS Tracker</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <meta charset="utf-8" />
+  <title>ESP8266 GPS Tracker (Leaflet+MQTT)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/paho-mqtt/paho-mqtt-min.js"></script>
-  <style>#map{height:100vh;width:100%;}</style>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .info {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(255,255,255,.9); padding: 10px 12px; border-radius: 6px;
+      font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC";
+      box-shadow: 0 2px 10px rgba(0,0,0,.1); z-index: 1000;
+    }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; }
+    .ok { background:#16a34a; } .bad { background:#ef4444; }
+    .info-row { margin: 4px 0; }
+    .locate-btn {
+      position: absolute; bottom: 20px; left: 10px;
+      background: #2563eb; color: #fff; padding: 8px 12px; border-radius: 6px;
+      font-size: 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+      user-select: none; z-index: 1000;
+    }
+    .locate-btn:hover { background: #1e40af; }
+  </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <div class="info">
+    <div class="info-row"><span id="connDot" class="dot bad"></span><b id="connText">未連線</b></div>
+    <div class="info-row">Lat/Lng：<span id="latlng">—</span></div>
+    <div class="info-row">速度：<span id="speed">—</span> km/h</div>
+    <div class="info-row">高度：<span id="alt">—</span> m</div>
+    <div class="info-row">時間(UTC)：<span id="ts">—</span></div>
+  </div>
+
+  <div class="locate-btn" id="locateBtn">📍 回到定位</div>
+
   <script>
-    // ---- 初始化地圖 ----
-    var map = L.map('map').setView([23.5, 121], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-    var marker = L.marker([23.5,121]).addTo(map).bindPopup("GPS訊號");
+  const map = L.map('map', { zoomControl:false }).setView([23.5,121],7);
+  L.control.zoom({position:'bottomright'}).addTo(map);
 
-    // ---- 初始化 MQTT WebSocket 客戶端 ----
-    var client = new Paho.MQTT.Client("broker.emqx.io", 8083, "webclient_" + Math.random());
-    
-    client.onMessageArrived = function(message) {
-        try {
-            var data = JSON.parse(message.payloadString);
-            var lat = parseFloat(data.lat);
-            var lng = parseFloat(data.lng);
-            marker.setLatLng([lat, lng]);
-            map.setView([lat, lng], 16);
-        } catch(e) {
-            console.error("解析 JSON 失敗:", e);
-        }
-    };
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map);
+  const marker = L.marker([23.5,121]).addTo(map).bindPopup("GPS訊號源");
+  const path = L.polyline([], { color: '#ef4444', weight: 3 }).addTo(map);
 
-    client.connect({
-        onSuccess: function() {
-            console.log("MQTT 連線成功!");
-            client.subscribe("gps/device1");
-        }
-    });
-  </script>
-</body>
-</html>
+  const $latlng = document.getElementById('latlng');
+  const $speed  = document.getElementById('speed');
+  const $alt    = document.getElementById('alt');
+  const $ts     = document.getElementById('ts');
+  const $dot    = document.getElementById('connDot');
+  const $connTx = document.getElementById('connText');
+  const $locateBtn = document.getElementById('locateBtn');
 
+  let firstUpdate = true;
+  let lastPos = null;
+  const smoothBuffer = [];
+  const bufferSize = 5;
 
+  function smoothLatLng(lat,lng){
+    smoothBuffer.push([lat,lng]);
+    if(smoothBuffer.length>bufferSize) smoothBuffer.shift();
+    let avgLat=0, avgLng=0;
+    smoothBuffer.forEach(p=>{avgLat+=p[0]; avgLng+=p[1];});
+    return [avgLat/smoothBuffer.length, avgLng/smoothBuffer.length];
+  }
 
+  const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+    connectTimeout:4000, clientId:'web_'+Math.random().toString(16).slice(2), clean:true, keepalive:30
+  });
+
+  client.on('connect',()=>{
+    $dot.className='dot ok'; $connTx.textContent='已連線';
+    client.subscribe('gps/device1',{qos:0});
+  });
+  client.on('reconnect',()=>{$dot.className='dot bad'; $connTx.textContent='重連中…';});
+  client.on('close',()=>{$dot.className='dot bad'; $connTx.textContent='連線關閉';});
+  client.on('error',(e)=>{console.error(e);});
+
+  client.on('message',(topic,payload)=>{
+    console.log("收到 MQTT:", payload.toString()); // Debug
+    try{
+      const { lat, lng, spd, alt, ts } = JSON.parse(payload.toString());
+      if(typeof lat!=='number'||typeof lng!=='number') return;
+
+      const [sLat,sLng] = smoothLatLng(lat,lng);
+      lastPos = [sLat,sLng];
+      marker.setLatLng(lastPos);
+
+      const pts = path.getLatLngs();
+      if(pts.length===0 || L.latLng(sLat,sLng).distanceTo(pts[pts.length-1])>20){
+        path.addLatLng(lastPos);
+      }
+
+      if(firstUpdate){
+        map.setView(lastPos,18);
+        firstUpdate=false;
+      }else{
+        map.panTo(lastPos,{animate:true});
+      }
+
+      $latlng.textContent = `${sLat.toFixed(6)}, ${sLng.toFixed(6)}`;
+      $speed.textContent  = (typeof spd==='number')?spd.toFixed(2):'—';
+      $alt.textContent    = (typeof alt==='number')?alt.toFixed(1):'—';
+      $ts.textContent     = ts || '—';
+    }catch(err){
+      console.warn('JSON解析錯誤:',err);
+    }
+  });
+
+  $locateBtn.addEventListener('click',()=>{
+    if(lastPos) map.setView(lastPos,18,{animate:true}
